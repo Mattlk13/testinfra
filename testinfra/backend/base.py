@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -11,24 +10,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import abc
 import collections
 import locale
 import logging
-import pipes
+import shlex
 import subprocess
 import urllib.parse
 
 logger = logging.getLogger("testinfra")
 
-HostSpec = collections.namedtuple(
-    'HostSpec', ['name', 'port', 'user', 'password'])
+HostSpec = collections.namedtuple("HostSpec", ["name", "port", "user", "password"])
 
 
-class CommandResult(object):
-
+class CommandResult:
     def __init__(
-        self, backend, exit_status, command, stdout_bytes,
-        stderr_bytes, stdout=None, stderr=None,
+        self,
+        backend,
+        exit_status,
+        command,
+        stdout_bytes,
+        stderr_bytes,
+        stdout=None,
+        stderr=None,
     ):
         self.exit_status = exit_status
         self._stdout_bytes = stdout_bytes
@@ -37,7 +41,7 @@ class CommandResult(object):
         self._stderr = stderr
         self.command = command
         self._backend = backend
-        super(CommandResult, self).__init__()
+        super().__init__()
 
     @property
     def succeeded(self):
@@ -92,21 +96,21 @@ class CommandResult(object):
 
     def __repr__(self):
         return (
-            "CommandResult(command=%s, exit_status=%s, stdout=%s, "
-            "stderr=%s)"
-        ) % (
-            repr(self.command),
+            "CommandResult(command={!r}, exit_status={}, stdout={!r}, " "stderr={!r})"
+        ).format(
+            self.command,
             self.exit_status,
-            repr(self._stdout_bytes or self._stdout),
-            repr(self._stderr_bytes or self._stderr),
+            self._stdout_bytes or self._stdout,
+            self._stderr_bytes or self._stderr,
         )
 
 
-class BaseBackend(object):
+class BaseBackend(metaclass=abc.ABCMeta):
     """Represent the connection to the remote or local system"""
-    NAME = None
+
     HAS_RUN_SALT = False
     HAS_RUN_ANSIBLE = False
+    NAME: str
 
     def __init__(self, hostname, sudo=False, sudo_user=None, *args, **kwargs):
         self._encoding = None
@@ -114,7 +118,7 @@ class BaseBackend(object):
         self.hostname = hostname
         self.sudo = sudo
         self.sudo_user = sudo_user
-        super(BaseBackend, self).__init__()
+        super().__init__()
 
     def set_host(self, host):
         self._host = host
@@ -161,22 +165,22 @@ class BaseBackend(object):
     def get_hosts(cls, host, **kwargs):
         if host is None:
             raise RuntimeError(
-                "One or more hosts is required with the %s backend" % (
-                    cls.get_connection_type(),),
+                "One or more hosts is required with the {} backend".format(
+                    cls.get_connection_type()
+                )
             )
         return [host]
 
     @staticmethod
     def quote(command, *args):
         if args:
-            return command % tuple(pipes.quote(a) for a in args)
+            return command % tuple(shlex.quote(a) for a in args)  # noqa: S001
         return command
 
     def get_sudo_command(self, command, sudo_user):
         if sudo_user is None:
             return self.quote("sudo /bin/sh -c %s", command)
-        return self.quote(
-            "sudo -u %s /bin/sh -c %s", sudo_user, command)
+        return self.quote("sudo -u %s /bin/sh -c %s", sudo_user, command)
 
     def get_command(self, command, *args):
         command = self.quote(command, *args)
@@ -191,7 +195,8 @@ class BaseBackend(object):
         command = self.quote(command, *args)
         command = self.encode(command)
         p = subprocess.Popen(
-            command, shell=True,
+            command,
+            shell=True,
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -206,25 +211,25 @@ class BaseBackend(object):
         port = None
         user = None
         password = None
-        if '@' in name:
-            user, name = name.split('@', 1)
-            if ':' in user:
-                user, password = user.split(':', 1)
+        if "@" in name:
+            user, name = name.split("@", 1)
+            if ":" in user:
+                user, password = user.split(":", 1)
         # A literal IPv6 address might be like
         #  [fe80:0::a:b:c]:80
         # thus, below in words; if this starts with a '[' assume it
         # encloses an ipv6 address with a closing ']', with a possible
         # trailing port after a colon
-        if name.startswith('['):
-            name, port = name.split(']')
+        if name.startswith("["):
+            name, port = name.split("]")
             name = name[1:]
-            if port.startswith(':'):
+            if port.startswith(":"):
                 port = port[1:]
             else:
                 port = None
         else:
-            if ':' in name:
-                name, port = name.split(':', 1)
+            if ":" in name:
+                name, port = name.split(":", 1)
         name = urllib.parse.unquote(name)
         if user is not None:
             user = urllib.parse.unquote(user)
@@ -240,17 +245,23 @@ class BaseBackend(object):
             user, name = name.split("@", 1)
         return name, user
 
-    def get_encoding(self):
-        cmd = self.run(
-            "python -c 'import locale;print(locale.getpreferredencoding())'")
-        if cmd.rc == 0:
-            encoding = cmd.stdout_bytes.splitlines()[0].decode("ascii")
-        else:
-            # Python is not installed, we hope the encoding to be the same as
-            # local machine...
+    def get_encoding(self) -> str:
+        encoding = None
+        for python in ("python3", "python"):
+            cmd = self.run(
+                "%s -c 'import locale;print(locale.getpreferredencoding())'",
+                python,
+                encoding=None,
+            )
+            if cmd.rc == 0:
+                encoding = cmd.stdout_bytes.splitlines()[0].decode("ascii")
+                break
+        # Python is not installed, we hope the encoding to be the same as
+        # local machine...
+        if not encoding:
             encoding = locale.getpreferredencoding()
         if encoding == "ANSI_X3.4-1968":
-            # Workaround defaut encoding ascii without LANG set
+            # Workaround default encoding ascii without LANG set
             encoding = "UTF-8"
         return encoding
 

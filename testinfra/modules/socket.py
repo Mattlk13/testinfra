@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -12,6 +11,7 @@
 # limitations under the License.
 
 import socket
+from typing import List, Optional, Tuple
 
 from testinfra.modules.base import Module
 from testinfra.utils import cached_property
@@ -23,8 +23,8 @@ def parse_socketspec(socketspec):
 
     if protocol not in ("udp", "tcp", "unix"):
         raise RuntimeError(
-            "Cannot validate protocol '%s'. Should be tcp, udp or unix" % (
-                protocol,))
+            "Cannot validate protocol '{}'. Should be tcp, udp or unix".format(protocol)
+        )
 
     if protocol == "unix":
         # unix:///foo/bar.sock
@@ -51,13 +51,13 @@ def parse_socketspec(socketspec):
                 break
 
         if family is None:
-            raise RuntimeError("Cannot validate ip address '%s'" % (host,))
+            raise RuntimeError("Cannot validate ip address '{}'".format(host))
 
     if port is not None:
         try:
             port = int(port)
         except ValueError:
-            raise RuntimeError("Cannot validate port '%s'" % (port,))
+            raise RuntimeError("Cannot validate port '{}'".format(port))
 
     return protocol, host, port
 
@@ -78,6 +78,7 @@ class Socket(Module):
       - udp socket on 127.0.0.1 port 69: ``udp://127.0.0.1:69``
 
     """
+
     _command = None
 
     def __init__(self, socketspec):
@@ -85,7 +86,7 @@ class Socket(Module):
             self.protocol, self.host, self.port = parse_socketspec(socketspec)
         else:
             self.protocol = self.host = self.port = None
-        super(Socket, self).__init__()
+        super().__init__()
 
     @property
     def is_listening(self):
@@ -93,7 +94,7 @@ class Socket(Module):
 
         >>> host.socket("unix:///var/run/docker.sock").is_listening
         False
-        >>> # This HTTP server listen on all ipv4 adresses but not on ipv6
+        >>> # This HTTP server listen on all ipv4 addresses but not on ipv6
         >>> host.socket("tcp://0.0.0.0:80").is_listening
         True
         >>> host.socket("tcp://:::80").is_listening
@@ -111,22 +112,20 @@ class Socket(Module):
             return ("unix", self.host) in sockets
         allipv4 = (self.protocol, "0.0.0.0", self.port) in sockets
         allipv6 = (self.protocol, "::", self.port) in sockets
-        return (
-            any([allipv6, all([allipv4, allipv6])])
-            or (
-                self.host is not None
-                and (
-                    (":" in self.host and allipv6 in sockets)
-                    or (":" not in self.host and allipv4 in sockets)
-                    or (self.protocol, self.host, self.port) in sockets)
-                )
+        return any([allipv6, all([allipv4, allipv6])]) or (
+            self.host is not None
+            and (
+                (":" in self.host and allipv6 in sockets)
+                or (":" not in self.host and allipv4 in sockets)
+                or (self.protocol, self.host, self.port) in sockets
+            )
         )
 
     @property
-    def clients(self):
+    def clients(self) -> List[Optional[Tuple[str, int]]]:
         """Return a list of clients connected to a listening socket
 
-        For tcp and udp sockets a list of pair (adress, port) is returned.
+        For tcp and udp sockets a list of pair (address, port) is returned.
         For unix sockets a list of None is returned (thus you can make a
         len() for counting clients).
 
@@ -136,7 +135,7 @@ class Socket(Module):
         [None, None, None]
 
         """
-        sockets = []
+        sockets: List[Optional[Tuple[str, int]]] = []
         for sock in self._iter_sockets(False):
             if sock[0] != self.protocol:
                 continue
@@ -166,21 +165,24 @@ class Socket(Module):
         ['tcp://0.0.0.0:22', 'tcp://:::22', 'unix:///run/systemd/private', ...]
         """
         sockets = []
-        # pylint: disable=protected-access
         for sock in cls(None)._iter_sockets(True):
             if sock[0] == "unix":
                 sockets.append("unix://" + sock[1])
             else:
-                sockets.append("%s://%s:%s" % (
-                    sock[0], sock[1], sock[2],
-                ))
+                sockets.append(
+                    "{}://{}:{}".format(
+                        sock[0],
+                        sock[1],
+                        sock[2],
+                    )
+                )
         return sockets
 
     def _iter_sockets(self, listening):
         raise NotImplementedError
 
     def __repr__(self):
-        return "<socket %s://%s%s>" % (
+        return "<socket {}://{}{}>".format(
             self.protocol,
             self.host + ":" if self.host else "",
             self.port,
@@ -190,81 +192,84 @@ class Socket(Module):
     def get_module_class(cls, host):
         if host.system_info.type == "linux":
             for cmd, impl in (
-                ('ss', LinuxSocketSS),
-                ('netstat', LinuxSocketNetstat),
+                ("ss", LinuxSocketSS),
+                ("netstat", LinuxSocketNetstat),
             ):
                 try:
                     command = host.find_command(cmd)
                 except ValueError:
                     pass
                 else:
-                    return type(impl.__name__, (impl,), {'_command': command})
+                    return type(impl.__name__, (impl,), {"_command": command})
             raise RuntimeError(
                 'could not use the Socket module, either "ss" or "netstat"'
-                ' utility is required in $PATH')
+                " utility is required in $PATH"
+            )
         if host.system_info.type.endswith("bsd"):
             return BSDSocket
         raise NotImplementedError
 
 
 class LinuxSocketSS(Socket):
-
     def _iter_sockets(self, listening):
-        cmd = '%s --numeric'
+        cmd = "%s --numeric"
         if listening:
-            cmd += ' --listening'
+            cmd += " --listening"
         else:
-            cmd += ' --all'
-        if self.protocol == 'tcp':
-            cmd += ' --tcp'
-        elif self.protocol == 'udp':
-            cmd += ' --udp'
-        elif self.protocol == 'unix':
-            cmd += ' --unix'
+            cmd += " --all"
+        if self.protocol == "tcp":
+            cmd += " --tcp"
+        elif self.protocol == "udp":
+            cmd += " --udp"
+        elif self.protocol == "unix":
+            cmd += " --unix"
 
         for line in self.run(cmd, self._command).stdout_bytes.splitlines()[1:]:
             # Ignore unix datagram sockets.
-            if line.split(None, 1)[0] == b'u_dgr':
+            if line.split(None, 1)[0] == b"u_dgr":
                 continue
             splitted = line.decode().split()
 
             # If listing only TCP or UDP sockets, output has 5 columns:
             # (State, Recv-Q, Send-Q, Local Address:Port, Peer Address:Port)
-            if self.protocol in ('tcp', 'udp'):
+            if self.protocol in ("tcp", "udp"):
                 protocol = self.protocol
-                status, local, remote = (
-                    splitted[0], splitted[3], splitted[4])
+                status, local, remote = (splitted[0], splitted[3], splitted[4])
             # If listing all or just unix sockets, output has 6 columns:
             # Netid, State, Recv-Q, Send-Q, LocalAddress:Port, PeerAddress:Port
             else:
                 protocol, status, local, remote = (
-                    splitted[0], splitted[1], splitted[4], splitted[5])
+                    splitted[0],
+                    splitted[1],
+                    splitted[4],
+                    splitted[5],
+                )
 
             # ss reports unix socket as u_str.
-            if protocol == 'u_str':
-                protocol = 'unix'
+            if protocol == "u_str":
+                protocol = "unix"
                 host, port = local, None
-            elif protocol in ('tcp', 'udp'):
-                host, port = local.rsplit(':', 1)
+            elif protocol in ("tcp", "udp"):
+                host, port = local.rsplit(":", 1)
                 port = int(port)
-                # new versions of ss output ipv6 adresses enclosed in []
-                if host and host[0] == '[' and host[-1] == ']':
+                # new versions of ss output ipv6 addresses enclosed in []
+                if host and host[0] == "[" and host[-1] == "]":
                     host = host[1:-1]
             else:
                 continue
 
             # UDP listening sockets may be in 'UNCONN' status.
-            if listening and status in ('LISTEN', 'UNCONN'):
-                if host == '*' and protocol in ('tcp', 'udp'):
-                    yield protocol, '::', port
-                    yield protocol, '0.0.0.0', port
-                elif protocol in ('tcp', 'udp'):
+            if listening and status in ("LISTEN", "UNCONN"):
+                if host == "*" and protocol in ("tcp", "udp"):
+                    yield protocol, "::", port
+                    yield protocol, "0.0.0.0", port
+                elif protocol in ("tcp", "udp"):
                     yield protocol, host, port
                 else:
                     yield protocol, host
-            elif not listening and status == 'ESTAB':
-                if protocol in ('tcp', 'udp'):
-                    remote_host, remote_port = remote.rsplit(':', 1)
+            elif not listening and status == "ESTAB":
+                if protocol in ("tcp", "udp"):
+                    remote_host, remote_port = remote.rsplit(":", 1)
                     remote_port = int(remote_port)
                     yield protocol, host, port, remote_host, remote_port
                 else:
@@ -272,7 +277,6 @@ class LinuxSocketSS(Socket):
 
 
 class LinuxSocketNetstat(Socket):
-
     def _iter_sockets(self, listening):
         cmd = "%s -n"
 
@@ -310,10 +314,9 @@ class LinuxSocketNetstat(Socket):
 
 
 class BSDSocket(Socket):
-
     @cached_property
     def _command(self):
-        return self.find_command('netstat')
+        return self.find_command("netstat")
 
     def _iter_sockets(self, listening):
         cmd = "%s -n"
@@ -332,7 +335,7 @@ class BSDSocket(Socket):
             if splitted[0] in ("tcp", "udp", "udp4", "tcp4", "tcp6", "udp6"):
 
                 address = splitted[3]
-                if address == '*.*':
+                if address == "*.*":
                     # On OpenBSD 6.3 (issue #338)
                     # udp          0      0  *.*                    *.*
                     # udp6         0      0  *.*                    *.*
@@ -359,8 +362,7 @@ class BSDSocket(Socket):
                     remote_port = int(remote_port)
                     yield protocol, host, port, remote_host, remote_port
             elif len(splitted) == 9 and splitted[1] in ("stream", "dgram"):
-                if (
-                    (splitted[4] != "0" and listening)
-                    or (splitted[4] == "0" and not listening)
+                if (splitted[4] != "0" and listening) or (
+                    splitted[4] == "0" and not listening
                 ):
-                    yield 'unix', splitted[-1]
+                    yield "unix", splitted[-1]

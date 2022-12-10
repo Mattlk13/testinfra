@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -14,8 +13,7 @@
 try:
     import salt.client
 except ImportError:
-    raise RuntimeError(
-        "You must install salt package to use the salt backend")
+    raise RuntimeError("You must install salt package to use the salt backend")
 
 from testinfra.backend import base
 
@@ -27,7 +25,7 @@ class SaltBackend(base.BaseBackend):
     def __init__(self, host, *args, **kwargs):
         self.host = host
         self._client = None
-        super(SaltBackend, self).__init__(self.host, *args, **kwargs)
+        super().__init__(self.host, *args, **kwargs)
 
     @property
     def client(self):
@@ -38,29 +36,35 @@ class SaltBackend(base.BaseBackend):
     def run(self, command, *args, **kwargs):
         command = self.get_command(command, *args)
         out = self.run_salt("cmd.run_all", [command])
-        return self.result(out['retcode'], command, out['stdout'],
-                           out['stderr'])
+        return self.result(
+            out["retcode"],
+            command,
+            out["stdout"].encode("utf8"),
+            out["stderr"].encode("utf8"),
+            stdout=out["stdout"],
+            stderr=out["stderr"],
+        )
 
     def run_salt(self, func, args=None):
         out = self.client.cmd(self.host, func, args or [])
         if self.host not in out:
             raise RuntimeError(
-                "Error while running %s(%s): %s. Minion not connected ?" % (
-                    func, args, out))
+                "Error while running {}({}): {}. "
+                "Minion not connected ?".format(func, args, out)
+            )
         return out[self.host]
 
     @classmethod
     def get_hosts(cls, host, **kwargs):
         if host is None:
             host = "*"
-        if any([c in host for c in "@*[?"]):
+        if any(c in host for c in "@*[?"):
             client = salt.client.LocalClient()
             if "@" in host:
-                hosts = client.cmd(
-                    host, "test.true", expr_form="compound").keys()
+                hosts = client.cmd(host, "test.true", tgt_type="compound").keys()
             else:
                 hosts = client.cmd(host, "test.true").keys()
             if not hosts:
-                raise RuntimeError("No host matching '%s'" % (host,))
+                raise RuntimeError("No host matching '{}'".format(host))
             return sorted(hosts)
-        return super(SaltBackend, cls).get_hosts(host, **kwargs)
+        return super().get_hosts(host, **kwargs)

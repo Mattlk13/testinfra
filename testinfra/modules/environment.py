@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -29,8 +28,7 @@ class Environment(InstanceModule):
 
     def __call__(self):
         ret_val = dict(
-            i.split('=', 1) for i in self.check_output('env -0').split(
-                '\x00') if i
+            i.split("=", 1) for i in self.check_output("env -0").split("\x00") if i
         )
         return ret_val
 

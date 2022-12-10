@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -10,7 +9,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-# pylint: disable=redefined-outer-name
 
 import logging
 import shutil
@@ -19,6 +17,7 @@ import tempfile
 import time
 
 import pytest
+
 import testinfra
 import testinfra.host
 import testinfra.modules
@@ -46,7 +45,7 @@ def pytest_addoption(parser):
         help=(
             "Remote connection backend (paramiko, ssh, safe-ssh, "
             "salt, docker, ansible, podman)"
-        )
+        ),
     )
     group.addoption(
         "--hosts",
@@ -59,6 +58,12 @@ def pytest_addoption(parser):
         action="store",
         dest="ssh_config",
         help="SSH config file",
+    )
+    group.addoption(
+        "--ssh-extra-args",
+        action="store",
+        dest="ssh_extra_args",
+        help="SSH extra args",
     )
     group.addoption(
         "--ssh-identity-file",
@@ -89,8 +94,9 @@ def pytest_addoption(parser):
         action="store_true",
         dest="force_ansible",
         help=(
-            'Force use of ansible connection backend only (slower but all '
-            'ansible connection options are handled)')
+            "Force use of ansible connection backend only (slower but all "
+            "ansible connection options are handled)"
+        ),
     )
     group.addoption(
         "--nagios",
@@ -121,11 +127,11 @@ def pytest_generate_tests(metafunc):
         params = sorted(params, key=lambda x: x.backend.get_pytest_id())
         ids = [e.backend.get_pytest_id() for e in params]
         metafunc.parametrize(
-            "_testinfra_host", params, ids=ids, scope="module", indirect=True)
+            "_testinfra_host", params, ids=ids, scope="module", indirect=True
+        )
 
 
-class NagiosReporter(object):
-
+class NagiosReporter:
     def __init__(self, out):
         self.passed = 0
         self.failed = 0
@@ -145,31 +151,34 @@ class NagiosReporter(object):
 
     def report(self):
         if self.failed:
-            status = b'CRITICAL'
+            status = b"CRITICAL"
             ret = 2
         else:
-            status = b'OK'
+            status = b"OK"
             ret = 0
 
-        if hasattr(sys.stdout, 'buffer'):
-            out = sys.stdout.buffer
-        else:
-            out = sys.stdout
-
-        out.write((
-            b"TESTINFRA %s - %d passed, %d failed, %d skipped in %.2f "
-            b"seconds\n") % (
-                status, self.passed, self.failed, self.skipped,
-                time.time() - self.start_time))
+        out = sys.stdout.buffer
+        out.write(
+            (b"TESTINFRA %s - %d passed, %d failed, %d skipped in %.2f " b"seconds\n")
+            % (
+                status,
+                self.passed,
+                self.failed,
+                self.skipped,
+                time.time() - self.start_time,
+            )
+        )
         self.out.seek(0)
         shutil.copyfileobj(self.out, out)
         return ret
 
 
 class SpooledTemporaryFile(tempfile.SpooledTemporaryFile):
-
     def __init__(self, *args, **kwargs):
-        self._out_encoding = kwargs['encoding']
+        if "b" in kwargs.get("mode", "b"):
+            self._out_encoding = kwargs.pop("encoding")
+        else:
+            self._out_encoding = kwargs.get("encoding")
         super().__init__(*args, **kwargs)
 
     def write(self, s):
@@ -182,25 +191,24 @@ class SpooledTemporaryFile(tempfile.SpooledTemporaryFile):
 
 @pytest.mark.trylast
 def pytest_configure(config):
-    if config.option.verbose > 1:
+    if config.getoption("--verbose", 0) > 1:
         root = logging.getLogger()
         if not root.handlers:
             root.addHandler(logging.NullHandler())
         logging.getLogger("testinfra").setLevel(logging.DEBUG)
-    if config.option.nagios:
+    if config.getoption("--nagios"):
         # disable & re-enable terminalreporter to write in a tempfile
-        reporter = config.pluginmanager.getplugin('terminalreporter')
+        reporter = config.pluginmanager.getplugin("terminalreporter")
         if reporter:
             out = SpooledTemporaryFile(encoding=sys.stdout.encoding)
             config.pluginmanager.unregister(reporter)
             reporter = reporter.__class__(config, out)
-            config.pluginmanager.register(reporter, 'terminalreporter')
-            config.pluginmanager.register(NagiosReporter(out),
-                                          'nagiosreporter')
+            config.pluginmanager.register(reporter, "terminalreporter")
+            config.pluginmanager.register(NagiosReporter(out), "nagiosreporter")
 
 
 @pytest.mark.trylast
 def pytest_sessionfinish(session, exitstatus):
-    reporter = session.config.pluginmanager.getplugin('nagiosreporter')
+    reporter = session.config.pluginmanager.getplugin("nagiosreporter")
     if reporter:
         session.exitstatus = reporter.report()

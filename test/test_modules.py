@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -13,29 +12,32 @@
 
 import crypt
 import datetime
+import os
 import re
 import time
+from ipaddress import IPv4Address, IPv6Address, ip_address
 
 import pytest
 
-from ipaddress import ip_address
-from ipaddress import IPv4Address
-from ipaddress import IPv6Address
-
 from testinfra.modules.socket import parse_socketspec
 
-all_images = pytest.mark.testinfra_hosts(*[
-    "docker://{}".format(image)
-    for image in (
-        "alpine", "archlinux", "centos_6", "centos_7",
-        "debian_buster", "ubuntu_xenial"
-    )
-])
+all_images = pytest.mark.testinfra_hosts(
+    *[
+        "docker://{}".format(image)
+        for image in (
+            "alpine",
+            "archlinux",
+            "rockylinux8",
+            "debian_bullseye",
+            "ubuntu_xenial",
+        )
+    ]
+)
 
 
 @all_images
 def test_package(host, docker_image):
-    assert not host.package('zsh').is_installed
+    assert not host.package("zsh").is_installed
     if docker_image in ("alpine", "archlinux"):
         name = "openssh"
     else:
@@ -44,21 +46,19 @@ def test_package(host, docker_image):
     ssh = host.package(name)
     version = {
         "alpine": "8.",
-        "archlinux": "8.",
-        "centos_6": "5.",
-        "centos_7": "7.",
-        "debian_buster": "1:7.9",
-        "ubuntu_xenial": "1:7.2"
+        "archlinux": "9.",
+        "rockylinux8": "8.",
+        "debian_bullseye": "1:8.4",
+        "ubuntu_xenial": "1:7.2",
     }[docker_image]
     assert ssh.is_installed
     assert ssh.version.startswith(version)
     release = {
-        "alpine": "r0",
+        "alpine": "r3",
         "archlinux": None,
-        "centos_6": ".el6",
-        "centos_7": ".el7",
-        "debian_buster": None,
-        "ubuntu_xenial": None
+        "rockylinux8": ".el8",
+        "debian_bullseye": None,
+        "ubuntu_xenial": None,
     }[docker_image]
     if release is None:
         with pytest.raises(NotImplementedError):
@@ -68,36 +68,44 @@ def test_package(host, docker_image):
 
 
 def test_held_package(host):
-    python = host.package("python")
+    python = host.package("python3")
     assert python.is_installed
-    assert python.version.startswith("2.7.")
+    assert python.version.startswith("3.9.")
+
+
+@pytest.mark.testinfra_hosts("docker://rockylinux8")
+def test_non_default_package_tool(host):
+    # Make non default pkg tool binary present
+    host.run("install -m a+rx /bin/true /usr/bin/dpkg-query")
+    assert host.package("openssh").is_installed
 
 
 @pytest.mark.destructive
 def test_uninstalled_package_version(host):
     with pytest.raises(AssertionError) as excinfo:
-        host.package('zsh').version
-    assert 'Unexpected exit code 1 for CommandResult' in str(excinfo.value)
-    assert host.package('sudo').is_installed
-    host.check_output('apt-get -y remove sudo')
-    assert not host.package('sudo').is_installed
+        host.package("zsh").version
+    assert "Unexpected exit code 1 for CommandResult" in str(excinfo.value)
+    assert host.package("sudo").is_installed
+    host.check_output("apt-get -y remove sudo")
+    assert not host.package("sudo").is_installed
     with pytest.raises(AssertionError) as excinfo:
-        host.package('sudo').version
-    assert ('The package sudo is not installed, dpkg-query output: '
-            'deinstall ok config-files 1.8.') in str(excinfo.value)
+        host.package("sudo").version
+    assert (
+        "The package sudo is not installed, dpkg-query output: "
+        "deinstall ok config-files 1.9."
+    ) in str(excinfo.value)
 
 
 @all_images
 def test_systeminfo(host, docker_image):
     assert host.system_info.type == "linux"
 
-    release, distribution, codename = {
-        "alpine": (r"^3\.11\.", "alpine", None),
-        "archlinux": ("rolling", "arch", None),
-        "centos_6": (r"^6", "CentOS", None),
-        "centos_7": (r"^7$", "centos", None),
-        "debian_buster": (r"^10", "debian", "buster"),
-        "ubuntu_xenial": (r"^16\.04$", "ubuntu", "xenial")
+    release, distribution, codename, arch = {
+        "alpine": (r"^3\.14\.", "alpine", None, "x86_64"),
+        "archlinux": ("rolling", "arch", None, "x86_64"),
+        "rockylinux8": (r"^8.\d+$", "rocky", None, "x86_64"),
+        "debian_bullseye": (r"^11", "debian", "bullseye", "x86_64"),
+        "ubuntu_xenial": (r"^16\.04$", "ubuntu", "xenial", "x86_64"),
     }[docker_image]
 
     assert host.system_info.distribution == distribution
@@ -107,8 +115,7 @@ def test_systeminfo(host, docker_image):
 
 @all_images
 def test_ssh_service(host, docker_image):
-    if docker_image in ("centos_6", "centos_7",
-                        "alpine", "archlinux"):
+    if docker_image in ("rockylinux8", "alpine", "archlinux"):
         name = "sshd"
     else:
         name = "ssh"
@@ -124,8 +131,8 @@ def test_ssh_service(host, docker_image):
             time.sleep(1)
         else:
             if docker_image == "archlinux":
-                raise pytest.skip('FIXME: flapping test')
-            raise AssertionError('ssh is not running')
+                raise pytest.skip("FIXME: flapping test")
+            raise AssertionError("ssh is not running")
 
     if docker_image == "ubuntu_xenial":
         assert not ssh.is_enabled
@@ -133,29 +140,56 @@ def test_ssh_service(host, docker_image):
         assert ssh.is_enabled
 
 
-@pytest.mark.parametrize("name,running,enabled", [
-    ("ntp", False, True),
-    ("salt-minion", False, False),
-])
+def test_service_systemd_mask(host):
+    ssh = host.service("ssh")
+    assert not ssh.is_masked
+    host.run("systemctl mask ssh")
+    assert ssh.is_masked
+    host.run("systemctl unmask ssh")
+    assert not ssh.is_masked
+
+
+@pytest.mark.parametrize(
+    "name,running,enabled",
+    [
+        ("ntp", False, True),
+        ("salt-minion", False, False),
+    ],
+)
 def test_service(host, name, running, enabled):
     service = host.service(name)
     assert service.is_running == running
     assert service.is_enabled == enabled
+    # check with systemd_properties
+    assert (
+        service.systemd_properties["UnitFileState"] == "enabled"
+        if enabled
+        else "disabled"
+    )
+    assert (
+        service.systemd_properties["ActiveState"] in ["active"]
+        if running
+        else ["failed", "inactive"]
+    )
 
 
 def test_salt(host):
     ssh_version = host.salt("pkg.version", "openssh-server", local=True)
-    assert ssh_version.startswith("1:7.9")
+    assert ssh_version.startswith("1:8.4")
 
 
 def test_puppet_resource(host):
     resource = host.puppet_resource("package", "openssh-server")
-    assert resource["openssh-server"]["ensure"].startswith("1:7.9")
+    assert resource["openssh-server"]["ensure"].startswith("1:8.4")
 
 
 def test_facter(host):
-    assert host.facter()["os"]["distro"]["codename"] == "buster"
-    assert host.facter("virtual") == {"virtual": "docker"}
+    assert host.facter()["os"]["distro"]["codename"] == "bullseye"
+    assert host.facter("virtual") in (
+        {"virtual": "docker"},
+        {"virtual": "hyperv"},  # github action uses hyperv
+        {"virtual": "physical"},  # I've this on my machine...
+    )
 
 
 def test_sysctl(host):
@@ -168,7 +202,10 @@ def test_parse_socketspec():
     assert parse_socketspec("tcp://:::22") == ("tcp", "::", 22)
     assert parse_socketspec("udp://0.0.0.0:22") == ("udp", "0.0.0.0", 22)
     assert parse_socketspec("unix://can:be.any/thing:22") == (
-        "unix", "can:be.any/thing:22", None)
+        "unix",
+        "can:be.any/thing:22",
+        None,
+    )
 
 
 def test_socket(host):
@@ -213,10 +250,9 @@ def test_process(host, docker_image):
     args, comm = {
         "alpine": ("/sbin/init", "init"),
         "archlinux": ("/usr/sbin/init", "systemd"),
-        "centos_6": ("/usr/sbin/sshd -D", "sshd"),
-        "centos_7": ("/usr/sbin/init", "systemd"),
-        "debian_buster": ("/sbin/init", "systemd"),
-        "ubuntu_xenial": ("/sbin/init", "systemd")
+        "rockylinux8": ("/usr/sbin/init", "systemd"),
+        "debian_bullseye": ("/sbin/init", "systemd"),
+        "ubuntu_xenial": ("/sbin/init", "systemd"),
     }[docker_image]
     assert init.args == args
     assert init.comm == comm
@@ -226,7 +262,7 @@ def test_user(host):
     user = host.user("sshd")
     assert user.exists
     assert user.name == "sshd"
-    assert user.uid == 105
+    assert user.uid == 104
     assert user.gid == 65534
     assert user.group == "nogroup"
     assert user.gids == [65534]
@@ -234,6 +270,13 @@ def test_user(host):
     assert user.shell == "/usr/sbin/nologin"
     assert user.home == "/run/sshd"
     assert user.password == "*"
+
+
+def test_user_password_days(host):
+    assert host.user("root").password_max_days == 99999
+    assert host.user("root").password_min_days == 0
+    assert host.user("user").password_max_days == 90
+    assert host.user("user").password_min_days == 7
 
 
 def test_user_user(host):
@@ -244,8 +287,7 @@ def test_user_user(host):
 
 def test_user_expiration_date(host):
     assert host.user("root").expiration_date is None
-    assert host.user("user").expiration_date == (
-        datetime.datetime(2024, 10, 4, 0, 0))
+    assert host.user("user").expiration_date == (datetime.datetime(2024, 10, 4, 0, 0))
 
 
 def test_nonexistent_user(host):
@@ -278,7 +320,7 @@ def test_file(host):
     d = host.file("/d")
     assert d.is_directory
     assert not d.is_file
-    assert d.listdir == ["f", "f?l", "f s"]
+    assert d.listdir() == ["f", "f?l", "f s"]
     f = host.file("/d/f")
     assert f.exists
     assert f.is_file
@@ -305,7 +347,7 @@ def test_file(host):
     assert link.is_file
     assert link.linked_to == "/d/f"
     assert link.linked_to == f
-    assert f == host.file('/d/f')
+    assert f == host.file("/d/f")
     assert not d == f
 
     host.check_output("rm -f /d/p && mkfifo /d/p")
@@ -313,8 +355,7 @@ def test_file(host):
 
 
 def test_ansible_unavailable(host):
-    expected = ('Ansible module is only available with '
-                'ansible connection backend')
+    expected = "Ansible module is only available with " "ansible connection backend"
     with pytest.raises(RuntimeError) as excinfo:
         host.ansible("setup")
     assert expected in str(excinfo.value)
@@ -323,10 +364,10 @@ def test_ansible_unavailable(host):
     assert expected in str(excinfo.value)
 
 
-@pytest.mark.testinfra_hosts("ansible://debian_buster")
+@pytest.mark.testinfra_hosts("ansible://debian_bullseye")
 def test_ansible_module(host):
     setup = host.ansible("setup")["ansible_facts"]
-    assert setup["ansible_lsb"]["codename"] == "buster"
+    assert setup["ansible_lsb"]["codename"] == "bullseye"
     passwd = host.ansible("file", "path=/etc/passwd state=file")
     assert passwd["changed"] is False
     assert passwd["gid"] == 0
@@ -335,7 +376,7 @@ def test_ansible_module(host):
     assert passwd["owner"] == "root"
     assert isinstance(passwd["size"], int)
     assert passwd["path"] == "/etc/passwd"
-    # seems to vary with differents docker fs backend
+    # seems to vary with different docker fs backend
     assert passwd["state"] in ("file", "hard")
     assert passwd["uid"] == 0
 
@@ -343,75 +384,90 @@ def test_ansible_module(host):
     assert variables["myvar"] == "foo"
     assert variables["myhostvar"] == "bar"
     assert variables["mygroupvar"] == "qux"
-    assert variables["inventory_hostname"] == "debian_buster"
+    assert variables["inventory_hostname"] == "debian_bullseye"
     assert variables["group_names"] == ["testgroup"]
     assert variables["groups"] == {
-        "all": ["debian_buster"],
-        "testgroup": ["debian_buster"],
+        "all": ["debian_bullseye"],
+        "testgroup": ["debian_bullseye"],
     }
 
     with pytest.raises(host.ansible.AnsibleException) as excinfo:
         host.ansible("command", "zzz")
-    assert excinfo.value.result['msg'] == \
-        "Skipped. You might want to try check=False"
+    assert excinfo.value.result["msg"] == "Skipped. You might want to try check=False"
 
     try:
         host.ansible("command", "zzz", check=False)
     except host.ansible.AnsibleException as exc:
-        assert exc.result['rc'] == 2
-        # notez que the debian buster container is set to LANG=fr_FR
-        assert exc.result['msg'] == ('[Errno 2] Aucun fichier ou dossier '
-                                     'de ce type')
+        assert exc.result["rc"] == 2
+        # notez que the debian bullseye container is set to LANG=fr_FR
+        assert exc.result["msg"] == ("[Errno 2] Aucun fichier ou dossier " "de ce type")
 
     result = host.ansible("command", "echo foo", check=False)
-    assert result['stdout'] == 'foo'
+    assert result["stdout"] == "foo"
 
 
-@pytest.mark.testinfra_hosts("ansible://debian_buster",
-                             "ansible://user@debian_buster")
+@pytest.mark.testinfra_hosts(
+    "ansible://debian_bullseye", "ansible://user@debian_bullseye"
+)
 def test_ansible_module_become(host):
     user_name = host.user().name
-    assert host.ansible('shell', 'echo $USER',
-                        check=False)['stdout'] == user_name
-    assert host.ansible('shell', 'echo $USER',
-                        check=False, become=True)['stdout'] == 'root'
+    assert host.ansible("shell", "echo $USER", check=False)["stdout"] == user_name
+    assert (
+        host.ansible("shell", "echo $USER", check=False, become=True)["stdout"]
+        == "root"
+    )
 
     with host.sudo():
-        assert host.user().name == 'root'
-        assert host.ansible('shell', 'echo $USER',
-                            check=False)['stdout'] == user_name
-        assert host.ansible('shell', 'echo $USER',
-                            check=False, become=True)['stdout'] == 'root'
+        assert host.user().name == "root"
+        assert host.ansible("shell", "echo $USER", check=False)["stdout"] == user_name
+        assert (
+            host.ansible("shell", "echo $USER", check=False, become=True)["stdout"]
+            == "root"
+        )
 
 
-@pytest.mark.testinfra_hosts("ansible://debian_buster")
+@pytest.mark.testinfra_hosts("ansible://debian_bullseye")
 def test_ansible_module_options(host):
-    assert host.ansible(
-        'command',
-        'id --user --name',
-        check=False,
-        become=True,
-        become_user='nobody',
-    )['stdout'] == 'nobody'
+    assert (
+        host.ansible(
+            "command",
+            "id --user --name",
+            check=False,
+            become=True,
+            become_user="nobody",
+        )["stdout"]
+        == "nobody"
+    )
 
 
 @pytest.mark.destructive
-def test_supervisor(host):
+@pytest.mark.parametrize(
+    "supervisorctl_path,supervisorctl_conf",
+    [
+        ("supervisorctl", None),
+        ("/usr/bin/supervisorctl", "/etc/supervisor/supervisord.conf"),
+    ],
+)
+def test_supervisor(host, supervisorctl_path, supervisorctl_conf):
     # Wait supervisord is running
     for _ in range(20):
         if host.service("supervisor").is_running:
             break
-        time.sleep(.5)
+        time.sleep(0.5)
     else:
         raise RuntimeError("No running supervisor")
 
     for _ in range(20):
-        service = host.supervisor("tail")
+        service = host.supervisor(
+            "tail",
+            supervisorctl_path=supervisorctl_path,
+            supervisorctl_conf=supervisorctl_conf,
+        )
         if service.status == "RUNNING":
             break
         else:
             assert service.status == "STARTING"
-            time.sleep(.5)
+            time.sleep(0.5)
     else:
         raise RuntimeError("No running tail in supervisor")
 
@@ -419,14 +475,21 @@ def test_supervisor(host):
     proc = host.process.get(pid=service.pid)
     assert proc.comm == "tail"
 
-    services = host.supervisor.get_services()
+    services = host.supervisor.get_services(supervisorctl_path, supervisorctl_conf)
     assert len(services) == 1
     assert services[0].name == "tail"
     assert services[0].is_running
     assert services[0].pid == service.pid
+    # Checking if conf is propagated
+    assert services[0].supervisorctl_path == supervisorctl_path
+    assert services[0].supervisorctl_conf == supervisorctl_conf
 
-    host.run("supervisorctl stop tail")
-    service = host.supervisor("tail")
+    host.check_output("supervisorctl stop tail")
+    service = host.supervisor(
+        "tail",
+        supervisorctl_path=supervisorctl_path,
+        supervisorctl_conf=supervisorctl_conf,
+    )
     assert not service.is_running
     assert service.status == "STOPPED"
     assert service.pid is None
@@ -434,18 +497,22 @@ def test_supervisor(host):
     host.run("service supervisor stop")
     assert not host.service("supervisor").is_running
     with pytest.raises(RuntimeError) as excinfo:
-        host.supervisor("tail").is_running
-    assert 'Is supervisor running' in str(excinfo.value)
+        host.supervisor(
+            "tail",
+            supervisorctl_path=supervisorctl_path,
+            supervisorctl_conf=supervisorctl_conf,
+        ).is_running
+    assert "Is supervisor running" in str(excinfo.value)
 
 
 def test_mountpoint(host):
-    root_mount = host.mount_point('/')
+    root_mount = host.mount_point("/")
     assert root_mount.exists
     assert isinstance(root_mount.options, list)
-    assert 'rw' in root_mount.options
+    assert "rw" in root_mount.options
     assert root_mount.filesystem
 
-    fake_mount = host.mount_point('/fake/mount')
+    fake_mount = host.mount_point("/fake/mount")
     assert not fake_mount.exists
 
     mountpoints = host.mount_point.get_mountpoints()
@@ -466,13 +533,13 @@ def test_sudo_fail_from_root(host):
     with pytest.raises(AssertionError) as exc:
         with host.sudo("unprivileged"):
             assert host.user().name == "unprivileged"
-            host.check_output('ls /root/invalid')
-    assert str(exc.value).startswith('Unexpected exit code')
+            host.check_output("ls /root/invalid")
+    assert str(exc.value).startswith("Unexpected exit code")
     with host.sudo():
         assert host.user().name == "root"
 
 
-@pytest.mark.testinfra_hosts("docker://user@debian_buster")
+@pytest.mark.testinfra_hosts("docker://user@debian_bullseye")
 def test_sudo_to_root(host):
     assert host.user().name == "user"
     with host.sudo():
@@ -488,35 +555,49 @@ def test_command_execution(host):
     assert host.run("true").succeeded
 
 
-def test_pip_package(host):
-    assert host.pip_package.get_packages()['pip']['version'] == '18.1'
-    pytest = host.pip_package.get_packages(pip_path='/v/bin/pip')['pytest']
-    assert pytest['version'].startswith('2.')
-    outdated = host.pip_package.get_outdated_packages(
-        pip_path='/v/bin/pip')['pytest']
-    assert outdated['current'] == pytest['version']
-    assert int(outdated['latest'].split('.')[0]) > 2
+def test_pip(host):
+    # get_packages
+    assert host.pip.get_packages()["pip"]["version"] == "20.3.4"
+    pkg = host.pip.get_packages(pip_path="/v/bin/pip")["requests"]
+    assert pkg["version"].startswith("1.")
+    # outdated
+    outdated = host.pip.get_outdated_packages(pip_path="/v/bin/pip")["requests"]
+    assert outdated["current"] == pkg["version"]
+    assert int(outdated["latest"].split(".")[0]) >= 1
+    # check
+    assert host.pip.check().succeeded
+    # is_installed
+    assert host.pip("pip").is_installed
+    assert not host.pip("does_not_exist").is_installed
+    pkg = host.pip("requests", pip_path="/v/bin/pip")
+    assert pkg.is_installed
+    # version
+    assert host.pip("pip").version == "20.3.4"
+    assert pkg.version.startswith("1.")
+    assert host.pip("does_not_exist").version == ""
 
 
 def test_environment_home(host):
-    assert host.environment().get('HOME') == '/root'
+    assert host.environment().get("HOME") == "/root"
 
 
+@pytest.mark.skipif(
+    "WSL_DISTRO_NAME" in os.environ, reason="Skip on WSL (Windows Subsystem for Linux)"
+)
 def test_iptables(host):
     cmd = host.run("systemctl start netfilter-persistent")
     assert cmd.exit_status == 0, f"{cmd.stdout}\n{cmd.stderr}"
-    ssh_rule_str = \
-        '-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT'
-    vip_redirect_rule_str = \
-        '-A PREROUTING -d 192.168.0.1/32 -j REDIRECT'
+    ssh_rule_str = "-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT"
+    vip_redirect_rule_str = "-A PREROUTING -d 192.168.0.1/32 -j REDIRECT"
     rules = host.iptables.rules()
-    input_rules = host.iptables.rules('filter', 'INPUT')
-    nat_rules = host.iptables.rules('nat')
-    nat_prerouting_rules = host.iptables.rules('nat', 'PREROUTING')
+    input_rules = host.iptables.rules("filter", "INPUT")
+    nat_rules = host.iptables.rules("nat")
+    nat_prerouting_rules = host.iptables.rules("nat", "PREROUTING")
     assert ssh_rule_str in rules
     assert ssh_rule_str in input_rules
     assert vip_redirect_rule_str in nat_rules
     assert vip_redirect_rule_str in nat_prerouting_rules
+    assert host.iptables._has_w_argument is True
 
 
 def test_ip6tables(host):
@@ -525,45 +606,46 @@ def test_ip6tables(host):
     try:
         v6_rules = host.iptables.rules(version=6)
     except AssertionError as exc_info:
-        if "Perhaps ip6tables or your kernel needs to " \
-           "be upgraded" in exc_info.args[0]:
-            pytest.skip(f"IPV6 does not seem to be enabled on the docker host"
-                        f"\n{exc_info}")
+        if (
+            "Perhaps ip6tables or your kernel needs to "
+            "be upgraded" in exc_info.args[0]
+        ):
+            pytest.skip(
+                f"IPV6 does not seem to be enabled on the docker host" f"\n{exc_info}"
+            )
         else:
             raise
     else:
-        assert '-P INPUT ACCEPT' in v6_rules
-        assert '-P FORWARD ACCEPT' in v6_rules
-        assert '-P OUTPUT ACCEPT' in v6_rules
-        v6_filter_rules = host.iptables.rules('filter', 'INPUT', version=6)
-        assert '-P INPUT ACCEPT' in v6_filter_rules
+        assert "-P INPUT ACCEPT" in v6_rules
+        assert "-P FORWARD ACCEPT" in v6_rules
+        assert "-P OUTPUT ACCEPT" in v6_rules
+        v6_filter_rules = host.iptables.rules("filter", "INPUT", version=6)
+        assert "-P INPUT ACCEPT" in v6_filter_rules
 
 
 @all_images
 def test_addr(host):
-    non_resolvable = host.addr('some_non_resolvable_host')
+    non_resolvable = host.addr("some_non_resolvable_host")
     assert not non_resolvable.is_resolvable
     assert not non_resolvable.is_reachable
     assert not non_resolvable.port(80).is_reachable
 
     # Some arbitrary internal IP, hopefully non reachable
     # IP addresses are always resolvable no matter what
-    non_reachable_ip = host.addr('10.42.13.73')
+    non_reachable_ip = host.addr("10.42.13.73")
     assert non_reachable_ip.is_resolvable
-    assert non_reachable_ip.ipv4_addresses == ['10.42.13.73']
+    assert non_reachable_ip.ipv4_addresses == ["10.42.13.73"]
     assert not non_reachable_ip.is_reachable
     assert not non_reachable_ip.port(80).is_reachable
 
-    google_dns = host.addr('8.8.8.8')
+    google_dns = host.addr("8.8.8.8")
     assert google_dns.is_resolvable
-    assert google_dns.ipv4_addresses == ['8.8.8.8']
-    assert google_dns.is_reachable
+    assert google_dns.ipv4_addresses == ["8.8.8.8"]
     assert google_dns.port(53).is_reachable
     assert not google_dns.port(666).is_reachable
 
-    google_addr = host.addr('google.com')
+    google_addr = host.addr("google.com")
     assert google_addr.is_resolvable
-    assert google_addr.is_reachable
     assert google_addr.port(443).is_reachable
     assert not google_addr.port(666).is_reachable
 
@@ -575,3 +657,32 @@ def test_addr(host):
 
     for ip in google_addr.ip_addresses:
         assert isinstance(ip_address(ip), (IPv4Address, IPv6Address))
+
+
+@pytest.mark.testinfra_hosts("ansible://debian_bullseye")
+def test_addr_namespace(host):
+    namespace_lookup = host.addr("localhost", "ns1")
+    assert not namespace_lookup.namespace_exists
+
+
+@pytest.mark.parametrize(
+    "family",
+    ["inet", None],
+)
+def test_interface(host, family):
+    # exist
+    assert host.interface("eth0", family=family).exists
+    assert not host.interface("does_not_exist", family=family).exists
+    # addresses
+    addresses = host.interface.default(family).addresses
+    assert len(addresses) > 0
+    for add in addresses:
+        try:
+            ip_address(add)
+        except ValueError:
+            pytest.fail(f"{add} is not a valid IP address")
+    # names and default
+    assert "eth0" in host.interface.names()
+    default_itf = host.interface.default(family)
+    assert default_itf.name == "eth0"
+    assert default_itf.exists

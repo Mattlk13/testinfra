@@ -1,4 +1,4 @@
-FROM debian:buster
+FROM debian:bullseye
 
 ENV container docker
 
@@ -6,7 +6,7 @@ ENV container docker
 RUN apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get -y install --no-install-recommends \
     lsb-release \
-    python \
+    python3 \
     openssh-server \
     puppet \
     salt-minion \
@@ -15,8 +15,9 @@ RUN apt-get update && \
     sudo \
     supervisor \
     systemd-sysv \
-    python-pip \
-    python-virtualenv \
+    virtualenv \
+    iproute2 \
+    iputils-ping \
     iptables \
     iptables-persistent && \
     rm -rf /var/lib/apt/lists/*
@@ -33,7 +34,7 @@ RUN mkdir -p /var/run/sshd && \
     systemctl enable supervisor.service && \
     systemctl enable netfilter-persistent.service && \
     ln -fsn /bin/false /usr/sbin/ntpd && \
-    echo "python hold" | dpkg --set-selections && \
+    echo "python3 hold" | dpkg --set-selections && \
     echo "LANG=fr_FR.ISO-8859-15" > /etc/default/locale && \
     echo "LANGUAGE=fr_FR" >> /etc/default/locale && \
     echo "fr_FR.ISO-8859-15 ISO-8859-15" >> /etc/locale.gen && \
@@ -63,10 +64,12 @@ RUN echo "user:foo" | chpasswd
 RUN echo "*nat\n:PREROUTING ACCEPT [0:0]\n:INPUT ACCEPT [0:0]\n:OUTPUT ACCEPT [0:0]\n:POSTROUTING ACCEPT [0:0]\n-A PREROUTING -d 192.168.0.1/32 -j REDIRECT\nCOMMIT\n*filter\n:INPUT ACCEPT [0:0]\n:FORWARD ACCEPT [0:0]\n:OUTPUT ACCEPT [0:0]\n-A INPUT -p tcp -m state --state NEW -m tcp --dport 22 -j ACCEPT\nCOMMIT" > /etc/iptables/rules.v4
 
 # Expiration date for user "user"
-RUN chage -E 20000 user
+RUN chage -E 20000 -m 7 -M 90 user
 
-# Some python virtualenv
-RUN python -m virtualenv /v && /v/bin/pip install 'pytest>2,<3'
+# Some python3 virtualenv
+RUN virtualenv /v
+RUN /v/bin/pip install -U pip
+RUN /v/bin/pip install 'requests>1,<2'
 
 ENV LANG fr_FR.ISO-8859-15
 ENV LANGUAGE fr_FR

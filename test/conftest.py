@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -22,16 +21,15 @@ import urllib.parse
 import pytest
 
 import testinfra
-from testinfra.backend.base import BaseBackend
 from testinfra.backend import parse_hostspec
-
+from testinfra.backend.base import BaseBackend
 
 BASETESTDIR = os.path.abspath(os.path.dirname(__file__))
 BASEDIR = os.path.abspath(os.path.join(BASETESTDIR, os.pardir))
 _HAS_DOCKER = None
 
 # Use testinfra to get a handy function to run commands locally
-local_host = testinfra.get_host('local://')
+local_host = testinfra.get_host("local://")
 check_output = local_host.check_output
 
 
@@ -58,9 +56,8 @@ ANSIBLE_HOSTVARS = """$ANSIBLE_VAULT;1.1;AES256
 DOCKER_IMAGES = [
     "alpine",
     "archlinux",
-    "centos_6",
-    "centos_7",
-    "debian_buster",
+    "rockylinux8",
+    "debian_bullseye",
     "ubuntu_xenial",
 ]
 
@@ -75,24 +72,23 @@ def setup_ansible_config(tmpdir, name, host, user, port, key):
         "ansible_user={}".format(user),
         "ansible_port={}".format(port),
     ]
-    tmpdir.join("inventory").write(
-        "[testgroup]\n" + " ".join(items) + "\n")
+    tmpdir.join("inventory").write("[testgroup]\n" + " ".join(items) + "\n")
     tmpdir.mkdir("host_vars").join(name).write(ANSIBLE_HOSTVARS)
-    tmpdir.mkdir("group_vars").join("testgroup").write((
-        "---\n"
-        "myhostvar: should_be_overriden\n"
-        "mygroupvar: qux\n"
-    ))
+    tmpdir.mkdir("group_vars").join("testgroup").write(
+        ("---\n" "myhostvar: should_be_overriden\n" "mygroupvar: qux\n")
+    )
     vault_password_file = tmpdir.join("vault-pass.txt")
     vault_password_file.write("polichinelle\n")
     ansible_cfg = tmpdir.join("ansible.cfg")
-    ansible_cfg.write((
-        "[defaults]\n"
-        "vault_password_file={}\n"
-        "host_key_checking=False\n\n"
-        "[ssh_connection]\n"
-        "pipelining=True\n"
-    ).format(str(vault_password_file)))
+    ansible_cfg.write(
+        (
+            "[defaults]\n"
+            "vault_password_file={}\n"
+            "host_key_checking=False\n\n"
+            "[ssh_connection]\n"
+            "pipelining=True\n"
+        ).format(str(vault_password_file))
+    )
 
 
 def build_docker_container_fixture(image, scope):
@@ -100,8 +96,7 @@ def build_docker_container_fixture(image, scope):
     def func(request):
         docker_host = os.environ.get("DOCKER_HOST")
         if docker_host is not None:
-            docker_host = urllib.parse.urlparse(
-                docker_host).hostname or "localhost"
+            docker_host = urllib.parse.urlparse(docker_host).hostname or "localhost"
         else:
             docker_host = "localhost"
 
@@ -109,7 +104,7 @@ def build_docker_container_fixture(image, scope):
         if image in DOCKER_IMAGES:
             cmd.append("--privileged")
 
-        cmd.append("philpep/testinfra:" + image)
+        cmd.append("testinfra:" + image)
         docker_id = check_output(" ".join(cmd))
 
         def teardown():
@@ -120,14 +115,14 @@ def build_docker_container_fixture(image, scope):
         port = check_output("docker port %s 22", docker_id)
         port = int(port.rsplit(":", 1)[-1])
         return docker_id, docker_host, port
-    fname = "_docker_container_%s_%s" % (image, scope)
+
+    fname = "_docker_container_{}_{}".format(image, scope)
     mod = sys.modules[__name__]
     setattr(mod, fname, func)
 
 
 def initialize_container_fixtures():
-    for image, scope in itertools.product(
-            DOCKER_IMAGES, ["function", "session"]):
+    for image, scope in itertools.product(DOCKER_IMAGES, ["function", "session"]):
         build_docker_container_fixture(image, scope)
 
 
@@ -142,14 +137,14 @@ def host(request, tmpdir_factory):
     image, kw = parse_hostspec(request.param)
     spec = BaseBackend.parse_hostspec(image)
 
-    for marker in getattr(request.function, 'pytestmark', []):
-        if marker.name == 'destructive':
+    for marker in getattr(request.function, "pytestmark", []):
+        if marker.name == "destructive":
             scope = "function"
             break
     else:
         scope = "session"
 
-    fname = "_docker_container_%s_%s" % (spec.name, scope)
+    fname = "_docker_container_{}_{}".format(spec.name, scope)
     docker_id, docker_host, port = request.getfixturevalue(fname)
 
     if kw["connection"] == "docker":
@@ -162,35 +157,31 @@ def host(request, tmpdir_factory):
         key.chmod(384)  # octal 600
         if kw["connection"] == "ansible":
             setup_ansible_config(
-                tmpdir, hostname, docker_host, spec.user or "root",
-                port, str(key))
+                tmpdir, hostname, docker_host, spec.user or "root", port, str(key)
+            )
             os.environ["ANSIBLE_CONFIG"] = str(tmpdir.join("ansible.cfg"))
             # this force backend cache reloading
             kw["ansible_inventory"] = str(tmpdir.join("inventory"))
         else:
             ssh_config = tmpdir.join("ssh_config")
-            ssh_config.write((
-                "Host {}\n"
-                "  Hostname {}\n"
-                "  Port {}\n"
-                "  UserKnownHostsFile /dev/null\n"
-                "  StrictHostKeyChecking no\n"
-                "  IdentityFile {}\n"
-                "  IdentitiesOnly yes\n"
-                "  LogLevel FATAL\n"
-            ).format(hostname, docker_host, port, str(key)))
+            ssh_config.write(
+                (
+                    "Host {}\n"
+                    "  Hostname {}\n"
+                    "  Port {}\n"
+                    "  UserKnownHostsFile /dev/null\n"
+                    "  StrictHostKeyChecking no\n"
+                    "  IdentityFile {}\n"
+                    "  IdentitiesOnly yes\n"
+                    "  LogLevel FATAL\n"
+                ).format(hostname, docker_host, port, str(key))
+            )
             kw["ssh_config"] = str(ssh_config)
 
         # Wait ssh to be up
-        service = testinfra.get_host(
-            docker_id, connection='docker').service
+        service = testinfra.get_host(docker_id, connection="docker").service
 
-        images_with_sshd = (
-            "centos_6",
-            "centos_7",
-            "alpine",
-            "archlinux"
-        )
+        images_with_sshd = ("rockylinux8", "alpine", "archlinux")
 
         if image in images_with_sshd:
             service_name = "sshd"
@@ -198,7 +189,7 @@ def host(request, tmpdir_factory):
             service_name = "ssh"
 
         while not service(service_name).is_running:
-            time.sleep(.5)
+            time.sleep(0.5)
 
     if kw["connection"] != "ansible":
         hostspec = (spec.user or "root") + "@" + hostname
@@ -217,15 +208,14 @@ def docker_image(host):
 
 def pytest_generate_tests(metafunc):
     if "host" in metafunc.fixturenames:
-        for marker in getattr(metafunc.function, 'pytestmark', []):
-            if marker.name == 'testinfra_hosts':
+        for marker in getattr(metafunc.function, "pytestmark", []):
+            if marker.name == "testinfra_hosts":
                 hosts = marker.args
                 break
         else:
             # Default
-            hosts = ["docker://debian_buster"]
-        metafunc.parametrize("host", hosts, indirect=True,
-                             scope="function")
+            hosts = ["docker://debian_bullseye"]
+        metafunc.parametrize("host", hosts, indirect=True, scope="function")
 
 
 def pytest_configure(config):
@@ -234,10 +224,17 @@ def pytest_configure(config):
 
     def build_image(build_failed, dockerfile, image, image_path):
         try:
-            subprocess.check_call([
-                "docker", "build", "-f", dockerfile,
-                "-t", "philpep/testinfra:{0}".format(image),
-                image_path])
+            subprocess.check_call(
+                [
+                    "docker",
+                    "build",
+                    "-f",
+                    dockerfile,
+                    "-t",
+                    "testinfra:{0}".format(image),
+                    image_path,
+                ]
+            )
         except Exception:
             build_failed.set()
             raise
@@ -249,8 +246,12 @@ def pytest_configure(config):
         image_path = os.path.join(images_path, image)
         dockerfile = os.path.join(image_path, "Dockerfile")
         if os.path.exists(dockerfile):
-            threads.append(threading.Thread(target=build_image, args=(
-                build_failed, dockerfile, image, image_path)))
+            threads.append(
+                threading.Thread(
+                    target=build_image,
+                    args=(build_failed, dockerfile, image, image_path),
+                )
+            )
 
     for thread in threads:
         thread.start()
@@ -258,3 +259,9 @@ def pytest_configure(config):
         thread.join()
     if build_failed.is_set():
         raise RuntimeError("One or more docker build failed")
+
+    config.addinivalue_line(
+        "markers", "testinfra_hosts(host_selector): mark test to run on selected hosts"
+    )
+    config.addinivalue_line("markers", "destructive: mark test as destructive")
+    config.addinivalue_line("markers", "skip_wsl: skip test on WSL, no systemd support")

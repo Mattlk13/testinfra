@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,27 +18,27 @@ class OpenShiftBackend(base.BaseBackend):
 
     def __init__(self, name, *args, **kwargs):
         self.name = name
-        self.container = kwargs.get('container')
-        self.namespace = kwargs.get('namespace')
-        self.kubeconfig = kwargs.get('kubeconfig')
-        super(OpenShiftBackend, self).__init__(self.name, *args, **kwargs)
+        self.container = kwargs.get("container")
+        self.namespace = kwargs.get("namespace")
+        self.kubeconfig = kwargs.get("kubeconfig")
+        super().__init__(self.name, *args, **kwargs)
 
     def run(self, command, *args, **kwargs):
         cmd = self.get_command(command, *args)
         # `oc exec` does not support specifying the user to run as.
         # See https://github.com/kubernetes/kubernetes/issues/30656
-        oscmd = 'oc '
+        oscmd = "oc "
         oscmd_args = []
         if self.kubeconfig is not None:
             oscmd += '--kubeconfig="%s" '
             oscmd_args.append(self.kubeconfig)
         if self.namespace is not None:
-            oscmd += '-n %s '
+            oscmd += "-n %s "
             oscmd_args.append(self.namespace)
         if self.container is not None:
-            oscmd += '-c %s '
+            oscmd += "-c %s "
             oscmd_args.append(self.container)
-        oscmd += 'exec %s -- /bin/sh -c %s'
+        oscmd += "exec %s -- /bin/sh -c %s"
         oscmd_args.extend([self.name, cmd])
         out = self.run_local(oscmd, *oscmd_args)
         return out

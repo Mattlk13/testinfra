@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -12,7 +11,7 @@
 # limitations under the License.
 
 
-class cached_property(object):
+class cached_property:
     """A cached property computed only once per instance
 
     A property that is only computed once per instance and then replaces itself
@@ -21,7 +20,7 @@ class cached_property(object):
     """  # noqa
 
     def __init__(self, func):
-        self.__doc__ = getattr(func, '__doc__')
+        self.__doc__ = func.__doc__
         self.func = func
 
     def __get__(self, obj, cls):

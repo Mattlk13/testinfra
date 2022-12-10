@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -24,7 +23,7 @@ class User(Module):
 
     def __init__(self, name=None):
         self._name = name
-        super(User, self).__init__()
+        super().__init__()
 
     @property
     def name(self):
@@ -35,6 +34,15 @@ class User(Module):
 
     @property
     def exists(self):
+        """Test if user exists
+
+        >>> host.user("root").exists
+        True
+        >>> host.user("nosuchuser").exists
+        False
+
+        """
+
         return self.run_test("id %s", self.name).rc == 0
 
     @property
@@ -55,9 +63,13 @@ class User(Module):
     @property
     def gids(self):
         """Return the list of user group IDs"""
-        return [int(gid) for gid in self.check_output(
-            "id -G %s", self.name,
-        ).split(" ")]
+        return [
+            int(gid)
+            for gid in self.check_output(
+                "id -G %s",
+                self.name,
+            ).split(" ")
+        ]
 
     @property
     def groups(self):
@@ -76,8 +88,26 @@ class User(Module):
 
     @property
     def password(self):
-        """Return the crypted user password"""
+        """Return the encrypted user password"""
         return self.check_output("getent shadow %s", self.name).split(":")[1]
+
+    @property
+    def password_max_days(self):
+        """Return the maximum number of days between password changes"""
+        days = self.check_output("getent shadow %s", self.name).split(":")[4]
+        try:
+            return int(days)
+        except ValueError:
+            return None
+
+    @property
+    def password_min_days(self):
+        """Return the minimum number of days between password changes"""
+        days = self.check_output("getent shadow %s", self.name).split(":")[3]
+        try:
+            return int(days)
+        except ValueError:
+            return None
 
     @property
     def gecos(self):
@@ -107,24 +137,22 @@ class User(Module):
     def get_module_class(cls, host):
         if host.system_info.type.endswith("bsd"):
             return BSDUser
-        if host.system_info.type == 'windows':
+        if host.system_info.type == "windows":
             return WindowsUser
-        return super(User, cls).get_module_class(host)
+        return super().get_module_class(host)
 
     def __repr__(self):
-        return "<user %s>" % (self.name,)
+        return "<user {}>".format(self.name)
 
 
 class BSDUser(User):
-
     @property
     def password(self):
         return self.check_output("getent passwd %s", self.name).split(":")[1]
 
     @property
     def expiration_date(self):
-        seconds = self.check_output(
-            "getent passwd %s", self.name).split(":")[6]
+        seconds = self.check_output("getent passwd %s", self.name).split(":")[6]
         try:
             seconds = int(seconds)
         except ValueError:
@@ -136,7 +164,6 @@ class BSDUser(User):
 
 
 class WindowsUser(User):
-
     @property
     def name(self):
         """Return user name"""
@@ -146,6 +173,15 @@ class WindowsUser(User):
 
     @property
     def exists(self):
+        """Test if user exists
+
+        >>> host.user("Administrator").exists
+        True
+        >>> host.user("nosuchuser").exists
+        False
+
+        """
+
         return self.run_test("net user %s", self.name).rc == 0
 
     @property
@@ -167,10 +203,11 @@ class WindowsUser(User):
     @property
     def groups(self):
         """Return the list of user local group names"""
-        local_groups = self.check_output("net user %s | findstr /B /C:\"Local "
-                                         "Group Memberships\"", self.name)
+        local_groups = self.check_output(
+            'net user %s | findstr /B /C:"Local ' 'Group Memberships"', self.name
+        )
         local_groups = local_groups.split()[3:]
-        return [g.replace('*', '') for g in local_groups]
+        return [g.replace("*", "") for g in local_groups]
 
     @property
     def home(self):
@@ -182,8 +219,7 @@ class WindowsUser(User):
 
     @property
     def gecos(self):
-        comment = self.check_output("net user %s | find /B /C:\"Comment\"",
-                                    self.name)
+        comment = self.check_output('net user %s | find /B /C:"Comment"', self.name)
         return comment.split().strip()[1]
 
     @property
@@ -192,9 +228,12 @@ class WindowsUser(User):
 
     @property
     def expiration_date(self):
-        expiration = self.check_output("net user %s | findstr /B /C:\"Password \
-                                       expires\"", self.name)
+        expiration = self.check_output(
+            'net user %s | findstr /B /C:"Password \
+                                       expires"',
+            self.name,
+        )
         expiration = expiration.split().strip()[1]
-        if expiration == 'Never':
+        if expiration == "Never":
             return None
-        return datetime.datetime.strptime(expiration, '%m/%d/%Y %H:%M%S %p')
+        return datetime.datetime.strptime(expiration, "%m/%d/%Y %H:%M%S %p")

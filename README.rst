@@ -17,7 +17,7 @@ a plugin to the powerful Pytest_ test engine
 License
 =======
 
-`Apache License 2.0 <https://github.com/philpep/testinfra/blob/master/LICENSE>`_
+`Apache License 2.0 <https://github.com/pytest-dev/pytest-testinfra/blob/master/LICENSE>`_
 
 The logo is licensed under the `Creative Commons NoDerivatives 4.0 License <https://creativecommons.org/licenses/by-nd/4.0/>`_
 If you have some other use in mind, contact us.
@@ -27,10 +27,10 @@ Quick start
 
 Install testinfra using pip::
 
-    $ pip install testinfra
+    $ pip install pytest-testinfra
 
     # or install the devel version
-    $ pip install 'git+https://github.com/philpep/testinfra@master#egg=testinfra'
+    $ pip install 'git+https://github.com/pytest-dev/pytest-testinfra@master#egg=pytest-testinfra'
 
 
 Write your first tests file to `test_myinfra.py`:
@@ -65,7 +65,7 @@ And run it::
     ====================== test session starts ======================
     platform linux -- Python 2.7.3 -- py-1.4.26 -- pytest-2.6.4
     plugins: testinfra
-    collected 3 items 
+    collected 3 items
 
     test_myinfra.py::test_passwd_file[local] PASSED
     test_myinfra.py::test_nginx_is_installed[local] PASSED
@@ -78,5 +78,5 @@ And run it::
 .. _Ansible: https://www.ansible.com/
 .. _Puppet: https://puppetlabs.com/
 .. _Chef: https://www.chef.io/
-.. _Serverspec: http://serverspec.org/
+.. _Serverspec: https://serverspec.org/
 .. _Pytest: https://pytest.org/

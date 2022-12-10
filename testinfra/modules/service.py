@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -31,7 +30,7 @@ class Service(Module):
 
     def __init__(self, name):
         self.name = name
-        super(Service, self).__init__()
+        super().__init__()
 
     @property
     def is_running(self):
@@ -43,18 +42,57 @@ class Service(Module):
         """Test if service is enabled"""
         raise NotImplementedError
 
-    # pylint: disable=too-many-return-statements
+    @property
+    def is_valid(self):
+        """Test if service is valid
+
+        This method is only available in the systemd implementation,
+        it will raise ``NotImplementedError`` in others implementation
+        """
+        raise NotImplementedError
+
+    @property
+    def is_masked(self):
+        """Test if service is masked
+
+        This method is only available in the systemd implementation,
+        it will raise ``NotImplementedError`` in others implementations
+        """
+        raise NotImplementedError
+
+    @cached_property
+    def systemd_properties(self):
+        """Properties of the service (unit).
+
+        Return service properties as a `dict`,
+        empty properties are not returned.
+
+        >>> ntp = host.service("ntp")
+        >>> ntp.systemd_properties["FragmentPath"]
+        '/lib/systemd/system/ntp.service'
+
+        This method is only available in the systemd implementation,
+        it will raise ``NotImplementedError`` in others implementations
+
+        Note: based on `systemctl show`_
+
+        .. _systemctl show: https://man7.org/linux/man-pages/man1/systemctl.1.html
+        """
+        raise NotImplementedError
+
     @classmethod
     def get_module_class(cls, host):
         if host.system_info.type == "linux":
-            if (
+            if host.file("/run/systemd/system/").is_directory or (
                 host.exists("systemctl")
                 and "systemd" in host.file("/sbin/init").linked_to
             ):
                 return SystemdService
-            if (host.exists("initctl")
-                    and host.exists('status')
-                    and host.file('/etc/init').is_directory):
+            if (
+                host.exists("initctl")
+                and host.exists("status")
+                and host.file("/etc/init").is_directory
+            ):
                 return UpstartService
             if host.exists("rc-service"):
                 return OpenRCService
@@ -68,14 +106,13 @@ class Service(Module):
         raise NotImplementedError
 
     def __repr__(self):
-        return "<service %s>" % (self.name,)
+        return "<service {}>".format(self.name)
 
 
 class SysvService(Service):
-
     @cached_property
     def _service_command(self):
-        return self.find_command('service')
+        return self.find_command("service")
 
     @property
     def is_running(self):
@@ -85,27 +122,30 @@ class SysvService(Service):
         # 3: not running and pid file does not exists
         # 4: Unable to determine status
         # 8: starting (alpine specific ?)
-        return self.run_expect(
-            [0, 1, 3, 8], "%s %s status",
-            self._service_command, self.name).rc == 0
+        return (
+            self.run_expect(
+                [0, 1, 3, 8], "%s %s status", self._service_command, self.name
+            ).rc
+            == 0
+        )
 
     @property
     def is_enabled(self):
-        return bool(self.check_output(
-            "find -L /etc/rc?.d/ -name %s",
-            "S??" + self.name,
-        ))
+        return bool(
+            self.check_output(
+                "find -L /etc/rc?.d/ -name %s",
+                "S??" + self.name,
+            )
+        )
 
 
 class SystemdService(SysvService):
-
     @property
     def is_running(self):
-        out = self.run_expect(
-            [0, 1, 3], "systemctl is-active %s", self.name)
+        out = self.run_expect([0, 1, 3], "systemctl is-active %s", self.name)
         if out.rc == 1:
             # Failed to connect to bus: No such file or directory
-            return super(SystemdService, self).is_running
+            return super().is_running
         return out.rc == 0
 
     @property
@@ -117,7 +157,7 @@ class SystemdService(SysvService):
             return False
         # Fallback on SysV
         # https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=760616
-        return super(SystemdService, self).is_enabled
+        return super().is_enabled
 
     @property
     def is_valid(self):
@@ -134,46 +174,66 @@ class SystemdService(SysvService):
         assert (cmd.stdout, cmd.stderr) == ("", "")
         return True
 
+    @property
+    def is_masked(self):
+        cmd = self.run_test("systemctl is-enabled %s", self.name)
+        return cmd.stdout.strip() == "masked"
+
+    @cached_property
+    def systemd_properties(self):
+        out = self.check_output("systemctl show %s", self.name)
+        out_d = {}
+        if out:
+            # maxsplit is required because values can contain `=`
+            out_d = dict(
+                map(lambda pair: pair.split("=", maxsplit=1), out.splitlines())
+            )
+        return out_d
+
 
 class UpstartService(SysvService):
-
     @property
     def is_enabled(self):
-        if self.run(
-            "grep -q '^start on' /etc/init/%s.conf",
-            self.name,
-        ).rc == 0 and self.run(
-            "grep -q '^manual' /etc/init/%s.override",
-            self.name,
-        ).rc != 0:
+        if (
+            self.run(
+                "grep -q '^start on' /etc/init/%s.conf",
+                self.name,
+            ).rc
+            == 0
+            and self.run(
+                "grep -q '^manual' /etc/init/%s.override",
+                self.name,
+            ).rc
+            != 0
+        ):
             return True
         # Fallback on SysV
-        return super(UpstartService, self).is_enabled
+        return super().is_enabled
 
     @property
     def is_running(self):
-        cmd = self.run_test('status %s', self.name)
+        cmd = self.run_test("status %s", self.name)
         if cmd.rc == 0 and len(cmd.stdout.split()) > 1:
-            return 'running' in cmd.stdout.split()[1]
-        return super(UpstartService, self).is_running
+            return "running" in cmd.stdout.split()[1]
+        return super().is_running
 
 
 class OpenRCService(SysvService):
-
     @cached_property
     def _service_command(self):
         return self.find_command("rc-service")
 
     @property
     def is_enabled(self):
-        return bool(self.check_output(
-            "find /etc/runlevels/ -name %s",
-            self.name,
-        ))
+        return bool(
+            self.check_output(
+                "find /etc/runlevels/ -name %s",
+                self.name,
+            )
+        )
 
 
 class FreeBSDService(Service):
-
     @property
     def is_running(self):
         return self.run_test("service %s onestatus", self.name).rc == 0
@@ -190,24 +250,24 @@ class FreeBSDService(Service):
 
 
 class OpenBSDService(Service):
-
     @property
     def is_running(self):
         return self.run_test("/etc/rc.d/%s check", self.name).rc == 0
 
     @property
     def is_enabled(self):
-        if self.name in self.check_output('rcctl ls on').splitlines():
+        if self.name in self.check_output("rcctl ls on").splitlines():
             return True
-        if self.name in self.check_output('rcctl ls off').splitlines():
+        if self.name in self.check_output("rcctl ls off").splitlines():
             return False
         raise RuntimeError(
-            "Unable to determine state of {0}. Does this service exist?"
-            .format(self.name))
+            "Unable to determine state of {0}. Does this service exist?".format(
+                self.name
+            )
+        )
 
 
 class NetBSDService(Service):
-
     @property
     def is_running(self):
         return self.run_test("/etc/rc.d/%s onestatus", self.name).rc == 0

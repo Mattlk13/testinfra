@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -20,7 +19,7 @@ class MountPoint(Module):
     def __init__(self, path, _attrs_cache=None):
         self.path = path
         self._attrs_cache = _attrs_cache
-        super(MountPoint, self).__init__()
+        super().__init__()
 
     @classmethod
     def _iter_mountpoints(cls):
@@ -103,9 +102,8 @@ class MountPoint(Module):
 
     def __repr__(self):
         return (
-            "<MountPoint(path=%s, device=%s, filesystem=%s, "
-            "options=%s)>"
-        ) % (
+            "<MountPoint(path={}, device={}, filesystem={}, " "options={})>"
+        ).format(
             self.path,
             self.device,
             self.filesystem,
@@ -114,7 +112,6 @@ class MountPoint(Module):
 
 
 class LinuxMountPoint(MountPoint):
-
     @classmethod
     def _iter_mountpoints(cls):
         check_output = cls(None).check_output
@@ -136,7 +133,6 @@ class LinuxMountPoint(MountPoint):
 
 
 class BSDMountPoint(MountPoint):
-
     @classmethod
     def _iter_mountpoints(cls):
         check_output = cls(None).check_output

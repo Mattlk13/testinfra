@@ -98,7 +98,7 @@ integration server.
 If your Jenkins slave can run Vagrant, your build scripts can be like::
 
 
-    pip install testinfra paramiko
+    pip install pytest-testinfra paramiko
     vagrant up
     vagrant ssh-config > .vagrant/ssh-config
     py.test --hosts=default --ssh-config=.vagrant/ssh-config --junit-xml junit.xml tests.py
@@ -138,7 +138,7 @@ Integration with KitchenCI
 
 KitchenCI (aka Test Kitchen) can use testinfra via its :code:`shell` verifier.
 Add the following to your :code:`.kitchen.yml`, this requires installing `paramiko` 
-additionaly (on your host machine, not in the VM handled by kitchen) ::
+additionally (on your host machine, not in the VM handled by kitchen) ::
 
     verifier:
       name: shell

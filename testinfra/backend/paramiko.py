@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -16,9 +15,12 @@ import os
 try:
     import paramiko
 except ImportError:
-    raise RuntimeError((
-        "You must install paramiko package (pip install paramiko) "
-        "to use the paramiko backend"))
+    raise RuntimeError(
+        (
+            "You must install paramiko package (pip install paramiko) "
+            "to use the paramiko backend"
+        )
+    )
 
 import paramiko.ssh_exception
 
@@ -28,6 +30,7 @@ from testinfra.utils import cached_property
 
 class IgnorePolicy(paramiko.MissingHostKeyPolicy):
     """Policy for ignoring missing host key."""
+
     def missing_host_key(self, client, hostname, key):
         pass
 
@@ -36,16 +39,22 @@ class ParamikoBackend(base.BaseBackend):
     NAME = "paramiko"
 
     def __init__(
-            self, hostspec, ssh_config=None, ssh_identity_file=None,
-            timeout=10, *args, **kwargs):
+        self,
+        hostspec,
+        ssh_config=None,
+        ssh_identity_file=None,
+        timeout=10,
+        *args,
+        **kwargs,
+    ):
         self.host = self.parse_hostspec(hostspec)
         self.ssh_config = ssh_config
         self.ssh_identity_file = ssh_identity_file
         self.get_pty = False
         self.timeout = int(timeout)
-        super(ParamikoBackend, self).__init__(self.host.name, *args, **kwargs)
+        super().__init__(self.host.name, *args, **kwargs)
 
-    def _load_ssh_config(self, client, cfg, ssh_config):
+    def _load_ssh_config(self, client, cfg, ssh_config, ssh_config_dir="~/.ssh"):
         for key, value in ssh_config.lookup(self.host.name).items():
             if key == "hostname":
                 cfg[key] = value
@@ -58,13 +67,21 @@ class ParamikoBackend(base.BaseBackend):
             elif key == "stricthostkeychecking" and value == "no":
                 client.set_missing_host_key_policy(IgnorePolicy())
             elif key == "requesttty":
-                self.get_pty = value in ('yes', 'force')
+                self.get_pty = value in ("yes", "force")
             elif key == "gssapikeyexchange":
-                cfg['gss_auth'] = (value == 'yes')
+                cfg["gss_auth"] = value == "yes"
             elif key == "gssapiauthentication":
-                cfg['gss_kex'] = (value == 'yes')
+                cfg["gss_kex"] = value == "yes"
             elif key == "proxycommand":
-                cfg['sock'] = paramiko.ProxyCommand(value)
+                cfg["sock"] = paramiko.ProxyCommand(value)
+            elif key == "include":
+                new_config_path = os.path.join(
+                    os.path.expanduser(ssh_config_dir), value
+                )
+                with open(new_config_path) as f:
+                    new_ssh_config = paramiko.SSHConfig()
+                    new_ssh_config.parse(f)
+                    self._load_ssh_config(client, cfg, new_ssh_config, ssh_config_dir)
 
     @cached_property
     def client(self):
@@ -75,16 +92,20 @@ class ParamikoBackend(base.BaseBackend):
             "port": int(self.host.port) if self.host.port else 22,
             "username": self.host.user,
             "timeout": self.timeout,
+            "password": self.host.password,
         }
         if self.ssh_config:
+            ssh_config_dir = os.path.dirname(self.ssh_config)
+
             with open(self.ssh_config) as f:
                 ssh_config = paramiko.SSHConfig()
                 ssh_config.parse(f)
-                self._load_ssh_config(client, cfg, ssh_config)
+                self._load_ssh_config(client, cfg, ssh_config, ssh_config_dir)
         else:
             # fallback reading ~/.ssh/config
-            default_ssh_config = os.path.join(
-                os.path.expanduser('~'), '.ssh', 'config')
+            default_ssh_config = os.path.join(os.path.expanduser("~"), ".ssh", "config")
+            ssh_config_dir = os.path.dirname(default_ssh_config)
+
             try:
                 with open(default_ssh_config) as f:
                     ssh_config = paramiko.SSHConfig()
@@ -92,7 +113,7 @@ class ParamikoBackend(base.BaseBackend):
             except IOError:
                 pass
             else:
-                self._load_ssh_config(client, cfg, ssh_config)
+                self._load_ssh_config(client, cfg, ssh_config, ssh_config_dir)
 
         if self.ssh_identity_file:
             cfg["key_filename"] = self.ssh_identity_file
@@ -105,8 +126,8 @@ class ParamikoBackend(base.BaseBackend):
             chan.get_pty()
         chan.exec_command(command)
         rc = chan.recv_exit_status()
-        stdout = b''.join(chan.makefile('rb'))
-        stderr = b''.join(chan.makefile_stderr('rb'))
+        stdout = b"".join(chan.makefile("rb"))
+        stderr = b"".join(chan.makefile_stderr("rb"))
         return rc, stdout, stderr
 
     def run(self, command, *args, **kwargs):

@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -32,6 +31,7 @@ class Sudo(InstanceModule):
     'www-data'
 
     """
+
     @contextlib.contextmanager
     def __call__(self, user=None):
         old_get_command = self._host.backend.get_command
@@ -39,8 +39,7 @@ class Sudo(InstanceModule):
         get_sudo_command = self._host.backend.get_sudo_command
 
         def get_command(command, *args):
-            return old_get_command(
-                get_sudo_command(quote(command, *args), user))
+            return old_get_command(get_sudo_command(quote(command, *args), user))
 
         self._host.backend.get_command = get_command
         try:

@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -21,7 +20,7 @@ class File(Module):
 
     def __init__(self, path):
         self.path = path
-        super(File, self).__init__()
+        super().__init__()
 
     @property
     def exists(self):
@@ -62,6 +61,9 @@ class File(Module):
         >>> host.file("/var/lock").linked_to
         '/run/lock'
         """
+        res = self.run_expect([0, 127], "realpath %s", self.path)
+        if res.rc == 0:
+            return res.stdout.strip()
         return self.check_output("readlink -f %s", self.path)
 
     @property
@@ -94,25 +96,23 @@ class File(Module):
     def mode(self):
         """Return file mode as octal integer
 
-        >>> host.file("/etc/passwd").mode
-        384  # 0o600 (octal)
-        >>> host.file("/etc/password").mode == 0o600
+        >>> host.file("/etc/shadow").mode
+        416  # Oo640 octal
+        >>> host.file("/etc/shadow").mode == 0o640
         True
-        >>> oct(host.file("/etc/password").mode) == '0600'
+        >>> oct(host.file("/etc/shadow").mode) == '0o640'
         True
-
-        Note: Python 3 oct(x)_ function will produce ``'0o600'``
 
         You can also utilize the file mode constants from
         the stat_ library for testing file mode.
 
         >>> import stat
-        >>> host.file("/etc/password").mode == stat.S_IRUSR | stat.S_IWUSR
+        >>> host.file("/etc/shadow").mode == stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP
         True
 
-        .. _oct(x): https://docs.python.org/3.5/library/functions.html#oct
-        .. _stat: https://docs.python.org/2/library/stat.html
-        """
+        .. _oct(x): https://docs.python.org/3/library/functions.html#oct
+        .. _stat: https://docs.python.org/3/library/stat.html
+        """  # noqa
         raise NotImplementedError
 
     def contains(self, pattern):
@@ -129,7 +129,7 @@ class File(Module):
     def _get_content(self, decode):
         out = self.run_test("cat -- %s", self.path)
         if out.rc != 0:
-            raise RuntimeError("Unexpected output %s" % (out,))
+            raise RuntimeError("Unexpected output {}".format(out))
         if decode:
             return out.stdout
         return out.stdout_bytes
@@ -166,20 +166,19 @@ class File(Module):
         """Return size of file in bytes"""
         raise NotImplementedError
 
-    @property
     def listdir(self):
         """Return list of items under the directory
 
-        >>> host.file("/tmp").listdir
+        >>> host.file("/tmp").listdir()
         ['foo_file', 'bar_dir']
         """
         out = self.run_test("ls -1 -q -- %s", self.path)
         if out.rc != 0:
-            raise RuntimeError("Unexpected output %s" % (out,))
+            raise RuntimeError("Unexpected output {}".format(out))
         return out.stdout.splitlines()
 
     def __repr__(self):
-        return "<file %s>" % (self.path,)
+        return "<file {}>".format(self.path)
 
     def __eq__(self, other):
         if isinstance(other, File):
@@ -187,9 +186,6 @@ class File(Module):
         if isinstance(other, str):
             return self.path == other
         return False
-
-    def __ne__(self, other):
-        return not self.__eq__(other)
 
     @classmethod
     def get_module_class(cls, host):
@@ -242,8 +238,7 @@ class GNUFile(File):
 
     @property
     def sha256sum(self):
-        return self.check_output(
-            "sha256sum %s | cut -d ' ' -f 1", self.path)
+        return self.check_output("sha256sum %s | cut -d ' ' -f 1", self.path)
 
 
 class BSDFile(File):
@@ -284,15 +279,13 @@ class BSDFile(File):
 
     @property
     def sha256sum(self):
-        return self.check_output(
-            "sha256 < %s", self.path)
+        return self.check_output("sha256 < %s", self.path)
 
 
 class DarwinFile(BSDFile):
-
     @property
     def linked_to(self):
-        link_script = '''
+        link_script = """
         TARGET_FILE='{0}'
         cd `dirname $TARGET_FILE`
         TARGET_FILE=`basename $TARGET_FILE`
@@ -305,13 +298,13 @@ class DarwinFile(BSDFile):
         PHYS_DIR=`pwd -P`
         RESULT=$PHYS_DIR/$TARGET_FILE
         echo $RESULT
-        '''.format(self.path)
+        """.format(
+            self.path
+        )
         return self.check_output(link_script)
 
 
 class NetBSDFile(BSDFile):
-
     @property
     def sha256sum(self):
-        return self.check_output(
-            "cksum -a sha256 < %s", self.path)
+        return self.check_output("cksum -a sha256 < %s", self.path)

@@ -17,7 +17,6 @@ host
 
 .. autoclass:: testinfra.host.Host
    :members:
-   :member-order: run
 
     .. attribute:: ansible
 
@@ -26,6 +25,10 @@ host
     .. attribute:: addr
 
        :class:`testinfra.modules.addr.Addr` class
+
+    .. attribute:: blockdevice
+
+       :class:`testinfra.modules.blockdevice.BlockDevice` class
 
     .. attribute:: docker
 
@@ -58,6 +61,10 @@ host
     .. attribute:: package
 
        :class:`testinfra.modules.package.Package` class
+
+    .. attribute:: pip
+
+       :class:`testinfra.modules.pip.Pip` class
 
     .. attribute:: pip_package
 
@@ -128,6 +135,13 @@ Addr
    :members:
 
 
+BlockDevice
+~~~~~~~~~~~
+
+.. autoclass:: testinfra.modules.blockdevice.BlockDevice(name)
+   :members:
+
+
 Docker
 ~~~~~~
 
@@ -183,11 +197,17 @@ Package
    :members:
 
 
+Pip
+~~~~~~~~~~
+
+.. autoclass:: testinfra.modules.pip.Pip
+   :members:
+
+
 PipPackage
 ~~~~~~~~~~
 
 .. autoclass:: testinfra.modules.pip.PipPackage
-   :members:
 
 
 Podman

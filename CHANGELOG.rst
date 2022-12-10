@@ -2,6 +2,130 @@
 Changelog
 =========
 
+7.0.1
+=====
+
+* [FIX] Fix `command -v` compatibility with dash shell
+
+7.0.0
+=====
+
+* [NEW] Improved ssh config support in Paramiko backend
+* [NEW] Add chroot backend
+* [NEW] Add support for Manjaro-Linux
+* [NEW] Add support for Cloudlinux
+* [BREAKING] Drop support for python 3.6 which is EOL
+
+
+6.8.0
+=====
+
+* [NEW] Add support for AlmaLinux and RockyLinux
+
+6.7.0
+=====
+
+* [NEW] Handle ansible_connection type community.docker.docker
+* [NEW] add ssh_extra_args option
+
+
+6.6.0
+=====
+
+* [NEW] Allow to test for user password expiration
+* [NEW] Handle ANSIBLE_SSH_COMMON_ARGS and ANSIBLE_SSH_EXTRA_ARGS environment variables for ansible connections
+* [FIX] Fix encoding issue in salt connections
+* [FIX] Fix AttributeError when "command" is not available and fallback to "which"
+
+
+6.5.0
+=====
+
+* Fallback to which when "command -v" fails
+* Use realpath by default to resolve symlinks instead of "readlink -f"
+* ansible: Support environment variables
+* Force package module to resolve to RpmPackage on Fedora
+* Fix new versions of supervisor may exit with status != 0
+* Eventually decode ansible output when it's not ascii
+* Either use python3 or python to get remote encoding
+
+6.4.0
+=====
+
+* Implement Interface names and default (#615)
+* Implement Service.systemd_properties (#612)
+
+6.3.0
+=====
+
+* Fix #451 for use with pytest -p no:terminal
+* Add client_version() and server_version() and version() to docker module.
+
+6.2.0
+=====
+
+* Fix #590: Systeminfo doesn't resolve Windows correctly  (#592)
+* First implementation of network namespaces in addr module (#596)
+* pip check support in PipPackage module (#605)
+* pip refactoring: implementation of installed and version (#606)
+* Allow to specify supervisorctl and supervisord.conf paths (#536)
+
+6.1.0
+=====
+
+* Fix wrong package module on CentOS having dpkg tools installed #570 (#575)
+* Deduplicate hosts returned by get_backends() (#572)
+* Use /run/systemd/system/ to detect systemd (fixes #546)
+* Use ssh_args from ansible.cfg
+* Require python >= 3.6
+* Fix ValueError with python 3.8+ when using --nagios option.
+
+6.0.0
+=====
+
+* Breaking change: testinfra has moved to the https://github.com/pytest-dev/
+  organization. Project on PyPi is renamed as pytest-testinfra. A dummy
+  testinfra will make the transition, but you should rename to pytest-testinfra
+  in your requirements files.
+
+5.3.1
+=====
+
+* Fix newly introduced is_masked property on systemd service https://github.com/philpep/testinfra/pull/569
+
+5.3.0
+=====
+
+* Add is_masked property on systemd service
+
+5.2.2
+=====
+
+* iptables: use -w option to wait for iptables lock when running in parallel
+  with pytest-xdist.
+
+5.2.1
+=====
+
+* Fix documentation build
+
+5.2.0
+=====
+
+* Allow kubeconfig context to be supplied in kubernetes backend
+* Drop file.__ne__ implementation and require python >= 3.5
+
+5.1.0
+=====
+
+* Use remote_user and remote_port in ansible.cfg
+* Add `arch` (architecture) attribute to system_info module
+
+5.0.0
+=====
+
+* Breaking change:  host.file().listdir() is now a method
+
 4.1.0
 =====
 
@@ -24,7 +148,7 @@ Changelog
 =====
 
 * Add extras for backend dependencies (#454)
-* Various enhencements of kitchen integration documentation
+* Various enhancements of kitchen integration documentation
 * ansible backend now support "password" field from ansible inventory
 * New backend "openshift"
 
@@ -37,7 +161,7 @@ Changelog
 =====
 
 * New module "environment" for getting remote environment variables
-* New module "block_device" exposing block device informations
+* New module "block_device" exposing block device information
 * Add a global flag --force-ansible to the command line
 * Raise an error in case of missing ansible inventory file
 * Fix an escape issue with ansible ssh args set inventory or configuration file
@@ -92,7 +216,7 @@ Changelog
 3.0.1
 =====
 
-* Fix parsing of ipv6 adresses for paramiko, ssh and ansible backends.
+* Fix parsing of ipv6 addresses for paramiko, ssh and ansible backends.
 * Fix --connection=ansible invocation when no hosts are provided
 
 3.0.0
@@ -140,7 +264,7 @@ Changelog
 ======
 
 * Add support for ansible "become" user in ansible module
-* Add failed/suceeded property on run() output
+* Add failed/succeeded property on run() output
 
 1.16.0
 ======
@@ -241,7 +365,7 @@ Changelog
 1.7.0
 =====
 
-* Salt: allow specifiy config directory (#230)
+* Salt: allow specify config directory (#230)
 * Add a WinRM backend
 * Socket: ipv6 sockets can handle ipv4 clients (#234)
 * Service: Enhance upstart detection (#243)

@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -32,7 +31,7 @@ class Docker(Module):
 
     def __init__(self, name):
         self._name = name
-        super(Docker, self).__init__()
+        super().__init__()
 
     def inspect(self):
         output = self.check_output("docker inspect %s", self._name)
@@ -40,7 +39,7 @@ class Docker(Module):
 
     @property
     def is_running(self):
-        return self.inspect()['State']['Running']
+        return self.inspect()["State"]["Running"]
 
     @property
     def id(self):
@@ -49,6 +48,33 @@ class Docker(Module):
     @property
     def name(self):
         return self.inspect()["Name"][1:]  # get rid of slash in front
+
+    @classmethod
+    def client_version(cls):
+        """Docker client version"""
+        return cls.version("{{.Client.Version}}")
+
+    @classmethod
+    def server_version(cls):
+        """Docker server version"""
+        return cls.version("{{.Server.Version}}")
+
+    @classmethod
+    def version(cls, format=None):
+        """Docker version_ with an optional format (Go template).
+
+        >>> host.docker.version()
+        Client: Docker Engine - Community
+        ...
+        >>> host.docker.version("{{.Client.Context}}"))
+        default
+
+        .. _version: https://docs.docker.com/engine/reference/commandline/version/
+        """
+        cmd = "docker version"
+        if format:
+            cmd = "{} --format '{}'".format(cmd, format)
+        return cls.check_output(cmd)
 
     @classmethod
     def get_containers(cls, **filters):
@@ -91,4 +117,4 @@ class Docker(Module):
         return result
 
     def __repr__(self):
-        return "<docker %s>" % (self._name)
+        return "<docker {}>".format(self._name)

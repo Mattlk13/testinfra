@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -19,16 +18,15 @@ class DockerBackend(base.BaseBackend):
 
     def __init__(self, name, *args, **kwargs):
         self.name, self.user = self.parse_containerspec(name)
-        super(DockerBackend, self).__init__(self.name, *args, **kwargs)
+        super().__init__(self.name, *args, **kwargs)
 
     def run(self, command, *args, **kwargs):
         cmd = self.get_command(command, *args)
         if self.user is not None:
             out = self.run_local(
-                "docker exec -u %s %s /bin/sh -c %s",
-                self.user, self.name, cmd)
+                "docker exec -u %s %s /bin/sh -c %s", self.user, self.name, cmd
+            )
         else:
-            out = self.run_local(
-                "docker exec %s /bin/sh -c %s", self.name, cmd)
+            out = self.run_local("docker exec %s /bin/sh -c %s", self.name, cmd)
         out.command = self.encode(cmd)
         return out

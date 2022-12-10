@@ -1,4 +1,3 @@
-# coding: utf-8
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -15,33 +14,49 @@ import os
 
 import testinfra.backend
 import testinfra.modules
+from testinfra.utils import cached_property
 
 
-class Host(object):
-    _host_cache = {}
-    _hosts_cache = {}
+class Host:
+    _host_cache = {}  # type: ignore[var-annotated]
+    _hosts_cache = {}  # type: ignore[var-annotated]
 
     def __init__(self, backend):
         self.backend = backend
-        super(Host, self).__init__()
+        super().__init__()
+
+    def __repr__(self):
+        return "<testinfra.host.Host {}>".format(self.backend.get_pytest_id())
+
+    @cached_property
+    def has_command_v(self):
+        """Return True if `command -v` is available"""
+        return self.run("command -v command").rc == 0
 
     def exists(self, command):
         """Return True if given command exist in $PATH"""
-        return self.run_expect([0, 1, 127], "command -v %s", command).rc == 0
+        if self.has_command_v:
+            out = self.run("command -v %s", command)
+        else:
+            out = self.run_expect([0, 1], "which %s", command)
+        return out.rc == 0
 
-    def find_command(self, command, extrapaths=('/sbin', '/usr/sbin')):
+    def find_command(self, command, extrapaths=("/sbin", "/usr/sbin")):
         """Return path of given command
 
         raise ValueError if command cannot be found
         """
-        out = self.run_expect([0, 1, 127], "command -v %s", command)
+        if self.has_command_v:
+            out = self.run("command -v %s", command)
+        else:
+            out = self.run_expect([0, 1], "which %s", command)
         if out.rc == 0:
-            return out.stdout.rstrip('\r\n')
+            return out.stdout.rstrip("\r\n")
         for basedir in extrapaths:
             path = os.path.join(basedir, command)
             if self.exists(path):
                 return path
-        raise ValueError('cannot find "%s" command' % (command,))
+        raise ValueError('cannot find "{}" command'.format(command))
 
     def run(self, command, *args, **kwargs):
         """Run given command and return rc (exit status), stdout and stderr
@@ -78,10 +93,9 @@ class Host(object):
         :param expected: A list of expected exit status
         :raises: AssertionError
         """
-        __tracebackhide__ = True  # pylint: disable=unused-variable
+        __tracebackhide__ = True
         out = self.run(command, *args, **kwargs)
-        assert out.rc in expected, (
-            'Unexpected exit code %s for %s' % (out.rc, out))
+        assert out.rc in expected, "Unexpected exit code {} for {}".format(out.rc, out)
         return out
 
     def run_test(self, command, *args, **kwargs):
@@ -97,10 +111,9 @@ class Host(object):
         :returns: stdout without trailing newline
         :raises: AssertionError
         """
-        __tracebackhide__ = True  # pylint: disable=unused-variable
+        __tracebackhide__ = True
         out = self.run(command, *args, **kwargs)
-        assert out.rc == 0, (
-            'Unexpected exit code %s for %s' % (out.rc, out))
+        assert out.rc == 0, "Unexpected exit code {} for {}".format(out.rc, out)
         return out.stdout.rstrip("\r\n")
 
     def __getattr__(self, name):
@@ -109,8 +122,9 @@ class Host(object):
             obj = module_class.get_module(self)
             setattr(self, name, obj)
             return obj
-        raise AttributeError("'{}' object has no attribute '{}'".format(
-            self.__class__.__name__, name))
+        raise AttributeError(
+            "'{}' object has no attribute '{}'".format(self.__class__.__name__, name)
+        )
 
     @classmethod
     def get_host(cls, hostspec, **kwargs):
