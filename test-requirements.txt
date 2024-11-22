@@ -2,7 +2,7 @@ mock
 pytest-cov
 pytest-xdist
 paramiko
-tornado<5
+tornado<7
 salt
 pywinrm
-ansible>=2.8,<3
+ansible>=2.8,<12
